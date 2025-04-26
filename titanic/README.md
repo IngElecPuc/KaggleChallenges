@@ -15,10 +15,10 @@ Predecir la variable `Survived` usando atributos como `Pclass`, `Sex`, `Age`, et
 ## 🛠️ Tecnologías
 
 - Python, Pandas, Matplotlib, Seaborn
-- Scikit-learn, GridSearchCV
+- Scikit-learn, Linear models, Nearest Neighborgs, Tree-based models, Boosting, Bayes, RandomizedSearchCV, Cross Validation
 - Jupyter Notebooks
 
 ## ✅ Score en Kaggle
 
-Accuracy en LB: **XX.xx**
+Accuracy en LB: **0.77272**
 
