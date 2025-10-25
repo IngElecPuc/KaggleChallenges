@@ -1,0 +1,33 @@
+spark:
+  app_name: "ieee-fraud-jupyter"
+  # alternativa 1: usar --packages y no poner jars acá
+  jars: "/opt/jars/postgresql-42.7.4.jar,/opt/jars/neo4j-connector-apache-spark_2.13-5.3.x_for_spark_4.jar"
+  shuffle_partitions: 128
+  driver_memory: "8g"
+
+postgres:
+  url: "jdbc:postgresql://localhost:5432/graphs"
+  user: "spark_ingest"
+  pass: "GYleZAI2pTBKJYl9W1PL"
+  schema_raw: 
+    schema_name: "raw"
+    table1: 'saml_d'
+  schema_out: 
+    schema_name: "saml_d"
+    table1: 'accounts'
+    table2: 'transferences'
+    table3: 'statements'
+  batchsize: 10000
+  fetchsize: 10000
+
+csv:
+  base_dir: "/mnt/datasets/Datasets/Anti Money Laundering Transaction Data (SAML-D)"
+  files:
+    SAML-D.csv: "saml_d"
+  num_partitions: 256
+
+neo4j:
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  pass: "Banco.69"
+  database: "saml-d"

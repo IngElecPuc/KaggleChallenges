@@ -1,28 +1,38 @@
 from pyspark.sql import SparkSession
-import pyspark.pandas as ps
-import os, sys
-os.environ["PYARROW_IGNORE_TIMEZONE"] = "1"
 from pyspark.sql import functions as F, Window
+import pyspark.pandas as ps
+import yaml, os, sys
+os.environ["PYARROW_IGNORE_TIMEZONE"] = "1"
 
-PG_URL  = 'jdbc:postgresql://localhost:5432/graphs'
-PG_USER = 'spark_ingest'
-PG_PASS = 'GYleZAI2pTBKJYl9W1PL'
-PG_SCHEMA_IN = 'raw'
-PG_SCHEMA_OUT = 'saml_d'
-PG_TABLE_IN =  'saml_d'
-PG_TABLE_OUT1 =  'accounts'
-PG_TABLE_OUT2 =  'transferences'
-PG_TABLE_OUT3 =  'statements'
-JDBC_JAR = r"C:\spark\spark-4.0.1-bin-hadoop3\jars\postgresql-42.7.4.jar"  
-JDBC_BATCHSIZE = 10000
-JDBC_FETCHSIZE = 10000
+with open("config.yaml", "r") as f:
+    CFG = yaml.safe_load(f)
+
+PG_URL          = CFG["postgres"]["url"]
+PG_USER         = CFG["postgres"]["user"]
+PG_PASS         = CFG["postgres"]["pass"]
+PG_SCHEMA_IN    = CFG["postgres"]["schema_raw"]["schema_name"]
+PG_SCHEMA_OUT   = CFG["postgres"]["schema_out"]["schema_name"]
+PG_TABLE_IN     = CFG["postgres"]["schema_raw"]["table1"]
+PG_TABLE_OUT1   = CFG["postgres"]["schema_out"]["table1"]
+PG_TABLE_OUT2   = CFG["postgres"]["schema_out"]["table2"]
+PG_TABLE_OUT3   = CFG["postgres"]["schema_out"]["table3"]
+JDBC_BATCHSIZE  = CFG["postgres"]["batchsize"]
+JDBC_FETCHSIZE  = CFG["postgres"]["fetchsize"]
+JDBC_JARS       = CFG["spark"].get("jars", "")
+extra = {}
+if JDBC_JARS:
+    extra = {
+      "spark.jars": JDBC_JARS,
+      "spark.driver.extraClassPath": JDBC_JARS.replace(",", ":"),
+      "spark.executor.extraClassPath": JDBC_JARS.replace(",", ":")
+    }
 
 spark = (
     SparkSession.builder
     .appName("ieee-fraud-jupyter")
-    .config("spark.jars", JDBC_JAR)
-    .config("spark.driver.extraClassPath", JDBC_JAR)
-    .config("spark.executor.extraClassPath", JDBC_JAR)
+    .config("spark.jars", JDBC_JARS)
+    .config("spark.driver.extraClassPath", JDBC_JARS)
+    .config("spark.executor.extraClassPath", JDBC_JARS)
     .config("spark.sql.ansi.enabled", "false") #Para poder usar la API de pandas pues no soporta modo ansi
     .config("spark.pyspark.driver.python", sys.executable)
     .config("spark.pyspark.python", sys.executable)

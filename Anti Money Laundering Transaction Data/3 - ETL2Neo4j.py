@@ -3,29 +3,36 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from py2neo import Graph
 from datetime import timedelta
-import sys, os
+import yaml, sys, os
 import multiprocessing
 cpu_cores = multiprocessing.cpu_count()
 print(f"CPU cores disponibles: {cpu_cores}")
 
-# === Credenciales ===
-PG_URL  = 'jdbc:postgresql://localhost:5432/graphs'
-PG_USER = 'spark_ingest'
-PG_PASS = 'GYleZAI2pTBKJYl9W1PL'
-PG_SCHEMA = 'saml_d'
-PG_TABLE1 = 'accounts'
-PG_TABLE2 = 'transferences'
-PG_TABLE3 = 'statements'
+with open("config.yaml", "r") as f:
+    CFG = yaml.safe_load(f)
 
-JDBC_JAR = r"C:\spark\spark-4.0.1-bin-hadoop3\jars\postgresql-42.7.4.jar"
-JDBC_BATCHSIZE = 10000
-JDBC_FETCHSIZE = 10000
+PG_URL          = CFG["postgres"]["url"]
+PG_USER         = CFG["postgres"]["user"]
+PG_PASS         = CFG["postgres"]["pass"]
+PG_SCHEMA       = CFG["postgres"]["schema_out"]["schema_name"]
+PG_TABLE1       = CFG["postgres"]["schema_out"]["table1"]
+PG_TABLE2       = CFG["postgres"]["schema_out"]["table2"]
+PG_TABLE3       = CFG["postgres"]["schema_out"]["table3"]
+JDBC_BATCHSIZE  = CFG["postgres"]["batchsize"]
+JDBC_FETCHSIZE  = CFG["postgres"]["fetchsize"]
+JARS            = CFG["spark"].get("jars", "")
+extra = {}
+if JARS:
+    extra = {
+      "spark.jars": JARS,
+      "spark.driver.extraClassPath": JARS.replace(",", ":"),
+      "spark.executor.extraClassPath": JARS.replace(",", ":")
+    }
 
-NEO4J_JAR  = r"C:\spark\spark-4.0.1-bin-hadoop3\jars\neo4j-connector-apache-spark_2.13-5.3.11-SNAPSHOT_for_spark_3.jar"
-NEO4J_URI  = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASS = "Banco.69"
-NEO4J_DDBB = "saml-d"
+NEO4J_URI       = CFG["neo4j"]["uri"]
+NEO4J_USER      = CFG["neo4j"]["user"]
+NEO4J_PASS      = CFG["neo4j"]["pass"]
+NEO4J_DDBB      = CFG["neo4j"]["database"]
 
 PYTHON = sys.executable  # python del kernel Jupyter
 

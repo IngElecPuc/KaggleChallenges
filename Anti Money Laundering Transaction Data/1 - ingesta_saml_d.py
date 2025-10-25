@@ -1,32 +1,34 @@
+
+import yaml, os, re
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-import re
 
-PG_URL  = "jdbc:postgresql://localhost:5432/graphs"
-PG_USER = "spark_ingest"
-PG_PASS = "GYleZAI2pTBKJYl9W1PL"
-PG_SCHEMA = "raw"
-CSV_DIR = r"E:\Datasets\Anti Money Laundering Transaction Data (SAML-D)"  
+with open("config.yaml", "r") as f:
+    CFG = yaml.safe_load(f)
 
-FILES = {"SAML-D.csv": "saml_d"}
-
-NUM_PARTITIONS = 6
-JDBC_BATCHSIZE = 1000
-
-JDBC_JAR = r"C:\spark\spark-4.0.1-bin-hadoop3\jars\postgresql-42.7.4.jar"  # ruta sin espacios si puedes
+PG_URL          = CFG["postgres"]["url"]
+PG_USER         = CFG["postgres"]["user"]
+PG_PASS         = CFG["postgres"]["pass"]
+PG_SCHEMA       = CFG["postgres"]["schema_raw"]["schema_name"]
+CSV_DIR         = CFG["csv"]["base_dir"]
+FILES           = CFG["csv"]["files"]
+NUM_PARTITIONS  = CFG["csv"]["num_partitions"]
+JDBC_BATCHSIZE  = CFG["postgres"]["batchsize"]
+JDBC_JARS       = CFG["spark"].get("jars", "")
+extra = {}
+if JDBC_JARS:
+    extra = {
+      "spark.jars": JDBC_JARS,
+      "spark.driver.extraClassPath": JDBC_JARS.replace(",", ":"),
+      "spark.executor.extraClassPath": JDBC_JARS.replace(",", ":")
+    }
 
 spark = (
     SparkSession.builder
-    .appName("ieee-fraud-jupyter")
-    .config("spark.jars", JDBC_JAR)
-    .config("spark.driver.extraClassPath", JDBC_JAR)
-    .config("spark.executor.extraClassPath", JDBC_JAR)
-    .getOrCreate()
+    .appName(CFG["spark"]["app_name"])
+    .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
+    .config("spark.driver.memory", CFG["spark"]["driver_memory"])
+    .configMap(extra) if hasattr(SparkSession.Builder, 'configMap') else SparkSession.builder
 )
-
-spark.conf.set("spark.sql.files.maxRecordsPerFile", 0)
-spark.conf.set("spark.sql.shuffle.partitions", str(max(4, NUM_PARTITIONS)))
-spark.conf.set("spark.sql.caseSensitive", "false")
 
 def normalize_col(name: str) -> str:
     # minúsculas, sustituir espacios y caracteres raros por _
@@ -36,7 +38,7 @@ def normalize_col(name: str) -> str:
     return s
 
 def load_csv(filename: str):
-    path = f"{CSV_DIR}\\{filename}"
+    path = os.path.join(CSV_DIR, filename)
     df = (
         spark.read
         .option("header", "true")
