@@ -4,6 +4,21 @@ spark:
   jars: "/opt/jars/postgresql-42.7.4.jar,/opt/jars/neo4j-connector-apache-spark_2.13-5.3.x_for_spark_4.jar"
   shuffle_partitions: 128
   driver_memory: "8g"
+  use_packages: true
+  maven_packages:
+    - "org.postgresql:postgresql:42.7.4"
+    - "org.neo4j:neo4j-connector-apache-spark_2.13:5.3.3_for_spark_4"
+  local_jars:
+    linux: "/opt/jars/postgresql-42.7.4.jar,/opt/jars/neo4j-connector-apache-spark_2.13-5.3.3_for_spark_4.jar"
+    windows: "C:\\jars\\postgresql-42.7.4.jar;C:\\jars\\neo4j-connector-apache-spark_2.13-5.3.3_for_spark_4.jar"
+  local_dirs:
+    linux: "/tmp/spark"
+    windows: "C:\\spark\\tmp"
+
+paths:
+  csv_base_dir:
+    linux: "/mnt/datasets/Anti Money Laundering Transaction Data (SAML-D)"
+    windows: "E:\\Datasets\\Anti Money Laundering Transaction Data (SAML-D)"
 
 postgres:
   url: "jdbc:postgresql://localhost:5432/graphs"
@@ -21,13 +36,28 @@ postgres:
   fetchsize: 10000
 
 csv:
-  base_dir: "/mnt/datasets/Datasets/Anti Money Laundering Transaction Data (SAML-D)"
   files:
     SAML-D.csv: "saml_d"
-  num_partitions: 256
+  num_partitions: 128
 
 neo4j:
   uri: "bolt://localhost:7687"
   user: "neo4j"
   pass: "Banco.69"
   database: "saml-d"
+
+etl:
+  checkpoints:
+    enabled: true         # puedes poner false para desactivar
+    mode: "auto"          # "auto" | "cwd" | "script" | "custom"
+    custom_dir: ""        # usa solo si mode="custom" (ruta absoluta o relativa)
+    subdir: ".etl_checkpoints"  # carpeta dentro de la base elegida
+  buckets:
+      nodes: 8
+      edges: 16
+  writers_per_bucket:
+      nodes: 2
+      edges: 4
+  batch_size:
+      nodes: 20000
+      edges: 20000

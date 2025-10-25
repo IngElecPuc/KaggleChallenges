@@ -3,14 +3,20 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from py2neo import Graph
 from datetime import timedelta
-import yaml, sys, os
-import multiprocessing
+import yaml, sys, os, platform
+import ctypes, multiprocessing
+import time, subprocess, atexit, signal
+from pathlib import Path
+
+
 cpu_cores = multiprocessing.cpu_count()
 print(f"CPU cores disponibles: {cpu_cores}")
 
 with open("config.yaml", "r") as f:
     CFG = yaml.safe_load(f)
 
+IS_WIN          = platform.system() == "Windows"
+SPARK_LOCAL_DIR = CFG["spark"]["local_dirs"]["windows" if IS_WIN else "linux"]
 PG_URL          = CFG["postgres"]["url"]
 PG_USER         = CFG["postgres"]["user"]
 PG_PASS         = CFG["postgres"]["pass"]
@@ -20,15 +26,6 @@ PG_TABLE2       = CFG["postgres"]["schema_out"]["table2"]
 PG_TABLE3       = CFG["postgres"]["schema_out"]["table3"]
 JDBC_BATCHSIZE  = CFG["postgres"]["batchsize"]
 JDBC_FETCHSIZE  = CFG["postgres"]["fetchsize"]
-JARS            = CFG["spark"].get("jars", "")
-extra = {}
-if JARS:
-    extra = {
-      "spark.jars": JARS,
-      "spark.driver.extraClassPath": JARS.replace(",", ":"),
-      "spark.executor.extraClassPath": JARS.replace(",", ":")
-    }
-
 NEO4J_URI       = CFG["neo4j"]["uri"]
 NEO4J_USER      = CFG["neo4j"]["user"]
 NEO4J_PASS      = CFG["neo4j"]["pass"]
@@ -36,27 +33,76 @@ NEO4J_DDBB      = CFG["neo4j"]["database"]
 
 PYTHON = sys.executable  # python del kernel Jupyter
 
-spark = (
-    SparkSession.builder
-    .appName("postgres-to-neo4j-graph")
-    .master("local[*]")
-    # === JARs locales ===
-    .config("spark.jars", f"{JDBC_JAR},{NEO4J_JAR}")
-    .config("spark.driver.extraClassPath", f"{JDBC_JAR};{NEO4J_JAR}")
-    .config("spark.executor.extraClassPath", f"{JDBC_JAR};{NEO4J_JAR}")
-    # === Mismo Python en driver/worker + fixes Windows ===
-    .config("spark.pyspark.driver.python", PYTHON)
-    .config("spark.pyspark.python", PYTHON)
-    .config("spark.executorEnv.PYSPARK_PYTHON", PYTHON)
-    .config("spark.driver.bindAddress", "127.0.0.1")
-    .config("spark.driver.host", "127.0.0.1")
-    .config("spark.python.use.daemon", "false")
-    .config("spark.local.dir", r"C:\spark\tmp")
-    .config("spark.sql.shuffle.partitions", "128")
-    .config("spark.driver.memory", "8g")
-    .config("spark.sql.execution.arrow.pyspark.enabled", "true")  # Opcional: mejora performance
-    .getOrCreate()
-)
+def _in_notebook() -> bool:
+    try:
+        from IPython import get_ipython  # noqa
+        return "IPKernelApp" in get_ipython().config
+    except Exception:
+        return False
+
+def resolve_checkpoint_dir(cfg) -> Path:
+    opt = cfg["etl"]["checkpoints"]
+    enabled = bool(opt.get("enabled", True))
+    if not enabled:
+        return None
+
+    mode = (opt.get("mode") or "auto").lower()
+    subdir = opt.get("subdir") or ".etl_checkpoints"
+
+    # 1) base_dir según modo
+    if mode == "cwd":
+        base = Path.cwd()
+    elif mode == "script":
+        # Puede fallar en notebook (no hay __file__)
+        base = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+    elif mode == "custom":
+        raw = opt.get("custom_dir") or ""
+        base = Path(raw).expanduser().resolve() if raw else Path.cwd()
+    else:  # "auto"
+        if _in_notebook():
+            base = Path.cwd()
+        else:
+            base = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+
+    chk = (base / subdir).resolve()
+    chk.mkdir(parents=True, exist_ok=True)
+    return chk
+
+CHK_DIR = resolve_checkpoint_dir(CFG)  # Path | None
+print(f"Checkpoint dir: {CHK_DIR if CHK_DIR else 'DISABLED'}")
+
+def _flag_path(prefix: str, bucket: int):
+    if CHK_DIR is None:
+        return None
+    return (CHK_DIR / f"{prefix}_{bucket}._DONE").resolve()
+
+def was_done(prefix: str, bucket: int) -> bool:
+    p = _flag_path(prefix, bucket)
+    return p.exists() if p else False
+
+def mark_done(prefix: str, bucket: int) -> None:
+    p = _flag_path(prefix, bucket)
+    if p:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
+
+
+builder = (SparkSession.builder
+           .appName("postgres-to-neo4j-graph")
+           .master("local[*]")
+           .config("spark.pyspark.driver.python", PYTHON)
+           .config("spark.pyspark.python", PYTHON)
+           .config("spark.executorEnv.PYSPARK_PYTHON", PYTHON)
+           .config("spark.driver.bindAddress", "127.0.0.1")
+           .config("spark.driver.host", "127.0.0.1")
+           .config("spark.python.use.daemon", "false")
+           .config("spark.local.dir", SPARK_LOCAL_DIR)
+           .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
+           .config("spark.driver.memory", CFG["spark"]["driver_memory"])
+           .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+           .config("spark.jars.packages", ",".join(CFG["spark"]["maven_packages"]))
+          )
+spark = builder.getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
 jdbc_props = {
@@ -311,39 +357,54 @@ CREATE CONSTRAINT tx_unique IF NOT EXISTS
 FOR ()-[r:TX]-() REQUIRE r.id IS UNIQUE
 """)
 
-# --- StayAwake: evita suspensión en Windows ---
-import ctypes, platform, time
-
 class StayAwake:
-    """Bloquea suspensión/apagado de pantalla mientras el contexto está activo."""
-    ES_CONTINUOUS = 0x80000000
-    ES_SYSTEM_REQUIRED = 0x00000001
-    ES_AWAYMODE_REQUIRED = 0x00000040  # opcional: evita que entre en sleep por "Away Mode"
+    """
+    Mantiene el sistema despierto mientras el contexto está activo.
+    - Windows: SetThreadExecutionState
+    - Linux: systemd-inhibit con un proceso bloqueante
+    """
+    def __init__(self, reason: str = "Spark ETL running"):
+        self.reason = reason
+        self.proc = None
+        self.is_win = platform.system() == "Windows"
 
     def __enter__(self):
-        if platform.system() == "Windows":
-            ctypes.windll.kernel32.SetThreadExecutionState(
-                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED | self.ES_AWAYMODE_REQUIRED
+        if self.is_win:
+            # ES_CONTINUOUS(0x80000000) | ES_SYSTEM_REQUIRED(0x00000001) | ES_AWAYMODE_REQUIRED(0x00000040)
+            self._win_set(True)
+            atexit.register(self._win_set, False)
+        else:
+            # Lanza un proceso que se queda bloqueado hasta que salgamos
+            # --what=sleep:idle evita suspensión e inactividad
+            self.proc = subprocess.Popen(
+                ["systemd-inhibit", "--what=sleep:idle", f"--why={self.reason}",
+                 "--mode=block", "tail", "-f", "/dev/null"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid
             )
+            atexit.register(self._linux_stop)
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        if platform.system() == "Windows":
-            # Restablece al estado normal
-            ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
+        if self.is_win:
+            self._win_set(False)
+        else:
+            self._linux_stop()
 
-import math, json, os, time
-from datetime import timedelta
+    def _win_set(self, enable: bool):
+        ES_CONTINUOUS = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        ES_AWAYMODE_REQUIRED = 0x00000040
+        val = ES_CONTINUOUS
+        if enable:
+            val |= (ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED)
+        ctypes.windll.kernel32.SetThreadExecutionState(val)
 
-CHK_DIR = r"E:\Felpipe\Trabajo\Ciencias de datos en general\KaggleChallenges\Anti Money Laundering Transaction Data\checkpoints"   # directorio de checkpoints
-os.makedirs(CHK_DIR, exist_ok=True)
-
-def write_done(path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    open(path, "w").close()
-
-def is_done(path):
-    return os.path.exists(path)
+    def _linux_stop(self):
+        if self.proc and self.proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.proc.pid), signal.SIGTERM)
+            except Exception:
+                pass
 
 def count_df(df):
     # cuenta y devuelve int
@@ -378,10 +439,12 @@ def ingest_nodes(
     done, start = 0, time.time()
     for b in range(buckets):
         size_b = bucket_sizes.get(b, 0)
-        tag = os.path.join(CHK_DIR, f"{chk_prefix}_{b}._DONE")
-        if size_b == 0: write_done(tag); continue
-        if is_done(tag):
-            done += size_b; pct, eta, elapsed = estimate_eta(done, total, start)
+        if size_b == 0:
+            mark_done(chk_prefix, b)
+            continue
+        if was_done(chk_prefix, b):
+            done += size_b
+            pct, eta, elapsed = estimate_eta(done, total, start)
             print(f"[NODOS] Skip bucket {b} ({size_b}). done={done}/{total} ({pct:0.2f}%) ETA={eta} elapsed={elapsed}")
             continue
 
@@ -393,7 +456,7 @@ def ingest_nodes(
             .write
             .format("org.neo4j.spark.DataSource")
             .mode("Append")
-            .option("url", "bolt://localhost:7687")
+            .option("url", NEO4J_URI)
             .option("authentication.type","basic")
             .option("authentication.basic.username", NEO4J_USER)
             .option("authentication.basic.password", NEO4J_PASS)
@@ -406,7 +469,8 @@ def ingest_nodes(
             .save())
         t1 = time.time()
 
-        done += size_b; write_done(tag)
+        done += size_b
+        mark_done(chk_prefix, b)
         pct, eta, elapsed = estimate_eta(done, total, start)
         print(f"[NODOS] bucket {b} -> {size_b} filas en {timedelta(seconds=int(t1-t0))}. "
               f"done={done}/{total} ({pct:0.2f}%) ETA={eta} elapsed={elapsed})")
@@ -431,10 +495,12 @@ def ingest_edges(
     done, start = 0, time.time()
     for b in range(buckets):
         size_b = bucket_sizes.get(b, 0)
-        tag = os.path.join(CHK_DIR, f"{chk_prefix}_{b}._DONE")
-        if size_b == 0: write_done(tag); continue
-        if is_done(tag):
-            done += size_b; pct, eta, elapsed = estimate_eta(done, total, start)
+        if size_b == 0:
+            mark_done(chk_prefix, b)
+            continue
+        if was_done(chk_prefix, b):
+            done += size_b
+            pct, eta, elapsed = estimate_eta(done, total, start)
             print(f"[RELS] Skip bucket {b} ({size_b}). done={done}/{total} ({pct:0.2f}%) ETA={eta} elapsed={elapsed}")
             continue
 
@@ -446,7 +512,7 @@ def ingest_edges(
             .write
             .format("org.neo4j.spark.DataSource")
             .mode("Append")
-            .option("url", "bolt://localhost:7687")
+            .option("url", NEO4J_URI)
             .option("authentication.type", "basic")
             .option("authentication.basic.username", NEO4J_USER)
             .option("authentication.basic.password", NEO4J_PASS)
@@ -471,7 +537,8 @@ def ingest_edges(
             .save())
         t1 = time.time()
 
-        done += size_b; write_done(tag)
+        done += size_b
+        mark_done(chk_prefix, b)
         pct, eta, elapsed = estimate_eta(done, total, start)
         print(f"[RELS] bucket {b} -> {size_b} filas en {timedelta(seconds=int(t1-t0))}. "
               f"done={done}/{total} ({pct:0.2f}%) ETA={eta} elapsed={elapsed})")
@@ -480,15 +547,15 @@ inicio = time.time()
 with StayAwake():
     # Nodos (micro-lotes)
     ingest_nodes(nodes_enriched_df, 
-                      buckets=8, 
-                      writers_per_bucket=2, 
-                      batch_size=20000)
+                      buckets=CFG["etl"]["buckets"]["nodes"], 
+                      writers_per_bucket=CFG["etl"]["writers_per_bucket"]["nodes"], 
+                      batch_size=CFG["etl"]["batch_size"]["nodes"])
 
     # Relaciones (micro-lotes)
     ingest_edges(edges_enriched, 
-                 buckets=16, 
-                 writers_per_bucket=4, 
-                 batch_size=20000, 
+                 buckets=CFG["etl"]["buckets"]["edges"], 
+                 writers_per_bucket=CFG["etl"]["writers_per_bucket"]["edges"], 
+                 batch_size=CFG["etl"]["batch_size"]["edges"], 
                  chk_prefix="rels_srcbuck" )
 
 fin = time.time()

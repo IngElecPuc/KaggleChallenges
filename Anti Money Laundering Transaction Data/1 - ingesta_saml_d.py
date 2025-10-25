@@ -1,34 +1,30 @@
 
-import yaml, os, re
+import os, platform, yaml, re
 from pyspark.sql import SparkSession
 
 with open("config.yaml", "r") as f:
     CFG = yaml.safe_load(f)
 
+IS_WIN          = platform.system() == "Windows"
+CSV_DIR         = CFG["paths"]["csv_base_dir"]["windows" if IS_WIN else "linux"]
 PG_URL          = CFG["postgres"]["url"]
 PG_USER         = CFG["postgres"]["user"]
 PG_PASS         = CFG["postgres"]["pass"]
 PG_SCHEMA       = CFG["postgres"]["schema_raw"]["schema_name"]
-CSV_DIR         = CFG["csv"]["base_dir"]
 FILES           = CFG["csv"]["files"]
 NUM_PARTITIONS  = CFG["csv"]["num_partitions"]
 JDBC_BATCHSIZE  = CFG["postgres"]["batchsize"]
-JDBC_JARS       = CFG["spark"].get("jars", "")
-extra = {}
-if JDBC_JARS:
-    extra = {
-      "spark.jars": JDBC_JARS,
-      "spark.driver.extraClassPath": JDBC_JARS.replace(",", ":"),
-      "spark.executor.extraClassPath": JDBC_JARS.replace(",", ":")
-    }
+SPARK_LOCAL_DIR = CFG["spark"]["local_dirs"]["windows" if IS_WIN else "linux"]
 
-spark = (
-    SparkSession.builder
-    .appName(CFG["spark"]["app_name"])
-    .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
-    .config("spark.driver.memory", CFG["spark"]["driver_memory"])
-    .configMap(extra) if hasattr(SparkSession.Builder, 'configMap') else SparkSession.builder
-)
+builder = (SparkSession.builder
+           .appName(CFG["spark"]["app_name"])
+           .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
+           .config("spark.driver.memory", CFG["spark"]["driver_memory"])
+           .config("spark.local.dir", SPARK_LOCAL_DIR)
+           .config("spark.jars.packages", ",".join(CFG["spark"]["maven_packages"]))
+          )
+spark = builder.getOrCreate()
+spark.sparkContext.setLogLevel("WARN")
 
 def normalize_col(name: str) -> str:
     # minúsculas, sustituir espacios y caracteres raros por _
@@ -99,7 +95,7 @@ def main():
         host='localhost',
         port=5432,
         database='graphs',
-        query={'sslmode': 'require'},
+        query={'sslmode': 'disable'},
     )
     engine = create_engine(connection_url)
 
