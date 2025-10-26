@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
+from pyspark.storagelevel import StorageLevel
 from py2neo import Graph
 from datetime import timedelta
 import yaml, sys, os, platform
@@ -86,7 +87,6 @@ def mark_done(prefix: str, bucket: int) -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.touch()
 
-
 builder = (SparkSession.builder
            .appName("postgres-to-neo4j-graph")
            .master("local[*]")
@@ -100,7 +100,7 @@ builder = (SparkSession.builder
            .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
            .config("spark.driver.memory", CFG["spark"]["driver_memory"])
            .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-           .config("spark.jars.packages", ",".join(CFG["spark"]["maven_packages"]))
+           #.config("spark.jars.packages", ",".join(CFG["spark"]["maven_packages"]))
           )
 spark = builder.getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
@@ -329,10 +329,16 @@ monthly_map = (monthly_pivot
 # Unir al nodo base
 nodes_enriched_df = (nodes_base
     .join(monthly_map, on="account_number", how="left")
+    
     # NOTA: neo4j connector no expande mapas a propiedades; podemos:
     #  (a) expandir en Spark a columnas (si el nº de props es acotado), o
     #  (b) escribir el mapa como JSON y expandirlo luego con APOC.
     # Aquí te dejo (a): expandimos a columnas reales.
+    #NOTE más adelante (spark 4+ la opción de arriba va a estar deprecada, cambiar por algo como esto)
+    #for k in keys:  # k es un str de Python
+    #nodes_enriched_df = nodes_enriched_df.withColumn(
+    #    k, F.element_at("mclose_map", F.lit(k))
+    #)
 )
 
 # Expandir columnas desde el mapa (versión segura para 1 año / pocas monedas):
@@ -428,8 +434,8 @@ def ingest_nodes(
 ):
     nodes_buck = (nodes_df
         .withColumn("bucket", (F.abs(F.hash("account_number")) % F.lit(buckets)))
-        .repartition(buckets, "bucket")
-        .persist())
+        .repartition(200)
+        .persist(StorageLevel.MEMORY_AND_DISK_DESER))
     _ = nodes_buck.count()
 
     sizes = (nodes_buck.groupBy("bucket").count().collect())
@@ -462,10 +468,11 @@ def ingest_nodes(
             .option("authentication.basic.password", NEO4J_PASS)
             .option("database", NEO4J_DDBB)
             .option("labels", ":Account")
+            .option("node.save.mode", "Merge")
             .option("node.keys", "account_number")
             .option("batch.size", str(batch_size))
-            .option("transaction.retries", "20")
-            .option("transaction.retry.timeout", "60000")
+            .option("transaction.retries", "3")
+            .option("transaction.retry.timeout", "30000")
             .save())
         t1 = time.time()
 
@@ -474,6 +481,8 @@ def ingest_nodes(
         pct, eta, elapsed = estimate_eta(done, total, start)
         print(f"[NODOS] bucket {b} -> {size_b} filas en {timedelta(seconds=int(t1-t0))}. "
               f"done={done}/{total} ({pct:0.2f}%) ETA={eta} elapsed={elapsed})")
+        
+    nodes_buck.unpersist()
         
 def ingest_edges(
     edges_df,
@@ -486,7 +495,7 @@ def ingest_edges(
         .withColumn("bucket", (F.abs(F.hash("src")) % F.lit(buckets)))
         .repartition(buckets, "bucket")
         .sortWithinPartitions("src", "id")
-        .persist())
+        .persist(StorageLevel.MEMORY_AND_DISK))
 
     counts_by_bucket = (edges_buck.groupBy("bucket").count().collect())
     bucket_sizes = {int(r["bucket"]): int(r["count"]) for r in counts_by_bucket}
@@ -532,8 +541,8 @@ def ingest_edges(
                     "src_delta,src_balance_before,src_balance_after,src_seq,src_currency,"
                     "dst_delta,dst_balance_before,dst_balance_after,dst_seq,dst_currency")
             .option("batch.size", str(batch_size))
-            .option("transaction.retries", "20")
-            .option("transaction.retry.timeout", "60000")
+            .option("transaction.retries", "3")
+            .option("transaction.retry.timeout", "30000")
             .save())
         t1 = time.time()
 
@@ -542,6 +551,8 @@ def ingest_edges(
         pct, eta, elapsed = estimate_eta(done, total, start)
         print(f"[RELS] bucket {b} -> {size_b} filas en {timedelta(seconds=int(t1-t0))}. "
               f"done={done}/{total} ({pct:0.2f}%) ETA={eta} elapsed={elapsed})")
+        
+    edges_buck.unpersist()
         
 inicio = time.time()
 with StayAwake():

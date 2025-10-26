@@ -20,6 +20,8 @@ builder = (SparkSession.builder
            .appName(CFG["spark"]["app_name"])
            .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
            .config("spark.driver.memory", CFG["spark"]["driver_memory"])
+           .config("spark.driver.bindAddress", "127.0.0.1")
+           .config("spark.driver.host", "127.0.0.1")
            .config("spark.local.dir", SPARK_LOCAL_DIR)
            .config("spark.jars.packages", ",".join(CFG["spark"]["maven_packages"]))
           )
