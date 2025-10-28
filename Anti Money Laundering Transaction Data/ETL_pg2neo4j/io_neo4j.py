@@ -7,17 +7,33 @@ from py2neo import Graph
 from ETL_pg2neo4j.load_config import NEO4J_URI, NEO4J_USER, NEO4J_PASS, NEO4J_DDBB
 from ETL_pg2neo4j.utils import estimate_eta, was_done, mark_done
 
+def wait_for_db_online(sys_graph, db_name, timeout=10):
+    """Espera hasta que la base esté online (máx. timeout segundos)"""
+    for _ in range(timeout):
+        status = sys_graph.run(
+            "SHOW DATABASES YIELD name, currentStatus "
+            "WHERE name=$db RETURN currentStatus",
+            db=db_name
+        ).evaluate()
+        if status == "online":
+            return True
+        time.sleep(1)
+    raise TimeoutError(f"La base {db_name} no llegó a estado ONLINE en {timeout}s")
+
 def prepare_dataset_neo4j():
 
-    graph = Graph(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS), name=NEO4J_DDBB)
+    graph = Graph(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS), name='system')
 
     print('Preparing Graph Database')
 
-    graph.run('STOP DATABASE `saml-d`;')
+    graph.run(f'STOP DATABASE `{NEO4J_DDBB}`;')
 
-    graph.run('DROP DATABASE `saml-d` IF EXISTS;')
+    graph.run(f'DROP DATABASE `{NEO4J_DDBB}` IF EXISTS;')
 
-    graph.run('CREATE DATABASE `saml-d` IF NOT EXISTS;')
+    graph.run(f'CREATE DATABASE `{NEO4J_DDBB}` IF NOT EXISTS;')
+
+    wait_for_db_online(graph, NEO4J_DDBB)
+    graph = Graph(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS), name=NEO4J_DDBB)
 
     graph.run("""
     CREATE CONSTRAINT account_unique IF NOT EXISTS

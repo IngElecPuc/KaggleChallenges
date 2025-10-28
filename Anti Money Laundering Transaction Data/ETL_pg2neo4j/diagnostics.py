@@ -39,7 +39,7 @@ def human_bytes(n):
 
 def print_diagnostics(prefix="[DIAG] "):
     stats = get_machine_stats()
-    print(prefix + f"Cores totales         : {stats['cpu_cores']}")
+    print(prefix + f"Cores totales          : {stats['cpu_cores']}")
     print(prefix + f"RAM total              : {human_bytes(stats['mem_total_bytes'])}")
     print(prefix + f"RAM usada              : {human_bytes(stats['mem_used_bytes'])}")
     print(prefix + f"RAM disponible         : {human_bytes(stats['mem_available_bytes'])}")

@@ -1,10 +1,19 @@
 from pyspark.sql import SparkSession
 from ETL_pg2neo4j.load_config import (
-    CFG, SPARK_LOCAL_DIR, PYTHON, PG_USER, PG_PASS, JDBC_FETCHSIZE
+    CFG, SPARK_LOCAL_DIR, PYTHON, PG_USER, PG_PASS, JDBC_FETCHSIZE, IS_WIN
 )
 
 def get_spark(stats): 
 
+    if CFG['spark']['use_packages']:
+        # Descargar desde Maven (requiere Internet)
+        spark_kars_key = "spark.jars.packages"
+        spark_kars_value = ",".join(CFG["spark"]["maven_packages"])
+    else:
+        # Usar rutas locales
+        spark_kars_key = "spark.jars"
+        spark_kars_value = CFG["spark"]["local_jars"]["windows" if IS_WIN else "linux"]
+    
     usable_cores = max(1, stats['cpu_cores'] - 1) #Limitar el uso de workers a n-1
     builder = (SparkSession.builder
             .appName("postgres-to-neo4j-graph")
@@ -19,7 +28,7 @@ def get_spark(stats):
             .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
             .config("spark.driver.memory", CFG["spark"]["driver_memory"])
             .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-            #.config("spark.jars.packages", ",".join(CFG["spark"]["maven_packages"]))
+            .config(spark_kars_key, spark_kars_value)
             )
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
