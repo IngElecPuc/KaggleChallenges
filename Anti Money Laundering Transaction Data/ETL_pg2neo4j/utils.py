@@ -1,6 +1,22 @@
 import ctypes, subprocess, atexit, signal
 import os, time, platform
 from datetime import timedelta
+from ETL_pg2neo4j.load_config import CHK_DIR
+
+def _flag_path(prefix: str, bucket: int):
+    if CHK_DIR is None:
+        return None
+    return (CHK_DIR / f"{prefix}_{bucket}._DONE").resolve()
+
+def was_done(prefix: str, bucket: int) -> bool:
+    p = _flag_path(prefix, bucket)
+    return p.exists() if p else False
+
+def mark_done(prefix: str, bucket: int) -> None:
+    p = _flag_path(prefix, bucket)
+    if p:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
 
 def count_df(df):
     # cuenta y devuelve int

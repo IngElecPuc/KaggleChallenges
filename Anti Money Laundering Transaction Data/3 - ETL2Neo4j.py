@@ -1,64 +1,49 @@
-"""
-etl_pg_neo4j/
-├─ etl_pg_neo4j/                    # paquete Python
-│  ├─ __init__.py
-│  ├─ app.py                        # punto de entrada (main) mínimo
-│  ├─ config.py                     # carga/validación de config.yaml
-│  ├─ log.py                        # logging unificado
-│  ├─ spark_env/
-│  │   ├─ __init__.py
-│  │   ├─ diagnostics.py            # cores/RAM, prints de diagnóstico
-│  │   ├─ tuning.py                 # creación de SparkSession y tuning AQE/GC
-│  │   └─ partitioning.py           # estimación bytes/row y recomendación de particiones
-│  ├─ io_pg/
-│  │   ├─ __init__.py
-│  │   └─ jdbc_read.py              # funciones de lectura JDBC (accounts/tx/stm)
-│  ├─ transform/
-│  │   ├─ __init__.py
-│  │   ├─ nodes.py                  # construcción/enriquecimiento de nodos
-│  │   └─ edges.py                  # construcción/enriquecimiento de aristas
-│  ├─ io_neo4j/
-│  │   ├─ __init__.py
-│  │   ├─ writer.py                 # escrituras a Neo4j (nodos/aristas, buckets/writers)
-│  │   └─ schema.py                 # constraints/indexes y checks en Neo4j
-│  └─ utils/
-│      ├─ __init__.py
-│      ├─ df_checks.py              # sanity checks (nulls, conteos, duplicados)
-│      └─ timeit.py                 # helpers de medición de etapas
-├─ config.yaml                      # tu config actual
-├─ README.md
-├─ pyproject.toml / setup.cfg       # instalación editable (opcional)
-└─ scripts/
-   └─ submit_etl.sh                 # spark-submit con paquetes y confs
-IDEA ORIGINAL CHATGPT
-"""
-from py2neo import Graph
+import time
 from datetime import timedelta
-import time, subprocess, atexit, signal
-from ETL_pg2neo4j.diagnostics import *
+from ETL_pg2neo4j.load_config import CFG
+from ETL_pg2neo4j.diagnostics import print_diagnostics
+from ETL_pg2neo4j.spark_session import get_spark
+from ETL_pg2neo4j.io_pg import read_accounts, read_transferences, read_statements
+from ETL_pg2neo4j.transform import build_nodes_edges
+from ETL_pg2neo4j.io_neo4j import prepare_dataset_neo4j, ingest_nodes, ingest_edges
+from ETL_pg2neo4j.utils import StayAwake
 
 def main():
 
+    #Diagnóstico inicial del sistema y del estado de éste
     stats = print_diagnostics()
+    #Creación de la sesión de spark
+    spark, jdbc_props = get_spark(stats)
+    #Lectura de las cuentas, transacciones y saldos
+    accounts_df = read_accounts(spark, jdbc_props)
+    tx_df = read_transferences(spark, jdbc_props)
+    stm_df = read_statements(spark, jdbc_props, accounts_df)
+    #Despliegue
+    accounts_df.printSchema()
+    tx_df.printSchema()
+    stm_df.printSchema()
+    #Construcción del modelo de grafos
+    nodes_enriched_df, edges_enriched = build_nodes_edges(accounts_df, tx_df, stm_df)
+    #Preparación del raw de la base de datos en el motor
+    prepare_dataset_neo4j()
+    #Ingesta del modelo de grafos
+    inicio = time.time()
+    with StayAwake():
+        # Nodos (micro-lotes)
+        ingest_nodes(nodes_enriched_df, 
+                        buckets=CFG["etl"]["buckets"]["nodes"], 
+                        writers_per_bucket=CFG["etl"]["writers_per_bucket"]["nodes"], 
+                        batch_size=CFG["etl"]["batch_size"]["nodes"])
 
+        # Relaciones (micro-lotes)
+        ingest_edges(edges_enriched, 
+                    buckets=CFG["etl"]["buckets"]["edges"], 
+                    writers_per_bucket=CFG["etl"]["writers_per_bucket"]["edges"], 
+                    batch_size=CFG["etl"]["batch_size"]["edges"], 
+                    chk_prefix="rels_srcbuck" )
 
-    # inicio = time.time()
-    # with StayAwake():
-    #     # Nodos (micro-lotes)
-    #     ingest_nodes(nodes_enriched_df, 
-    #                     buckets=CFG["etl"]["buckets"]["nodes"], 
-    #                     writers_per_bucket=CFG["etl"]["writers_per_bucket"]["nodes"], 
-    #                     batch_size=CFG["etl"]["batch_size"]["nodes"])
-
-    #     # Relaciones (micro-lotes)
-    #     ingest_edges(edges_enriched, 
-    #                 buckets=CFG["etl"]["buckets"]["edges"], 
-    #                 writers_per_bucket=CFG["etl"]["writers_per_bucket"]["edges"], 
-    #                 batch_size=CFG["etl"]["batch_size"]["edges"], 
-    #                 chk_prefix="rels_srcbuck" )
-
-    # fin = time.time()
-    # print(f"Tiempo total: {timedelta(seconds=int(fin - inicio))}")
+    fin = time.time()
+    print(f"Tiempo total: {timedelta(seconds=int(fin - inicio))}")
 
 if __name__ == '__main__':
     main()

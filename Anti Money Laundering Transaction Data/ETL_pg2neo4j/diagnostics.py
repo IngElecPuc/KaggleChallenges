@@ -1,5 +1,5 @@
 from pyspark.sql import functions as F
-import os, shutil, math, multiprocessing, time
+import os, shutil, math, multiprocessing, psutil
 from contextlib import contextmanager
 
 # Intentamos psutil para medir memoria; si no está, usamos /proc/meminfo
@@ -20,7 +20,6 @@ def _meminfo_fallback():
 def get_machine_stats():
     cpu_cores = multiprocessing.cpu_count()
     try:
-        import psutil
         vm = psutil.virtual_memory()
         total, used, avail = vm.total, vm.used, vm.available
     except Exception:

@@ -1,14 +1,35 @@
 
+from datetime import timedelta
+import time
+from pyspark.sql import functions as F
+from pyspark.storagelevel import StorageLevel
+from py2neo import Graph
+from ETL_pg2neo4j.load_config import NEO4J_URI, NEO4J_USER, NEO4J_PASS, NEO4J_DDBB
+from ETL_pg2neo4j.utils import estimate_eta, was_done, mark_done
 
-graph = Graph(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS), name=NEO4J_DDBB)
-graph.run("""
-CREATE CONSTRAINT account_unique IF NOT EXISTS
-FOR (a:Account) REQUIRE a.account_number IS UNIQUE
-""")
-graph.run("""
-CREATE CONSTRAINT tx_unique IF NOT EXISTS
-FOR ()-[r:TX]-() REQUIRE r.id IS UNIQUE
-""")
+def prepare_dataset_neo4j():
+
+    graph = Graph(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS), name=NEO4J_DDBB)
+
+    print('Preparing Graph Database')
+
+    graph.run('STOP DATABASE `saml-d`;')
+
+    graph.run('DROP DATABASE `saml-d` IF EXISTS;')
+
+    graph.run('CREATE DATABASE `saml-d` IF NOT EXISTS;')
+
+    graph.run("""
+    CREATE CONSTRAINT account_unique IF NOT EXISTS
+    FOR (a:Account) REQUIRE a.account_number IS UNIQUE
+    """)
+
+    graph.run("""
+    CREATE CONSTRAINT tx_unique IF NOT EXISTS
+    FOR ()-[r:TX]-() REQUIRE r.id IS UNIQUE
+    """)
+
+    graph.run('SHOW DATABASES;')
 
 def ingest_nodes(
     nodes_df,
