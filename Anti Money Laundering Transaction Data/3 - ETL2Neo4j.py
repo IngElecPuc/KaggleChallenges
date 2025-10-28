@@ -32,37 +32,33 @@ etl_pg_neo4j/
    └─ submit_etl.sh                 # spark-submit con paquetes y confs
 IDEA ORIGINAL CHATGPT
 """
-
-from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
-from pyspark.storagelevel import StorageLevel
 from py2neo import Graph
 from datetime import timedelta
-import yaml, sys, os, platform
-import ctypes, multiprocessing
 import time, subprocess, atexit, signal
-from pathlib import Path
-
+from ETL_pg2neo4j.diagnostics import *
 
 def main():
-    inicio = time.time()
-    with StayAwake():
-        # Nodos (micro-lotes)
-        ingest_nodes(nodes_enriched_df, 
-                        buckets=CFG["etl"]["buckets"]["nodes"], 
-                        writers_per_bucket=CFG["etl"]["writers_per_bucket"]["nodes"], 
-                        batch_size=CFG["etl"]["batch_size"]["nodes"])
 
-        # Relaciones (micro-lotes)
-        ingest_edges(edges_enriched, 
-                    buckets=CFG["etl"]["buckets"]["edges"], 
-                    writers_per_bucket=CFG["etl"]["writers_per_bucket"]["edges"], 
-                    batch_size=CFG["etl"]["batch_size"]["edges"], 
-                    chk_prefix="rels_srcbuck" )
+    stats = print_diagnostics()
 
-    fin = time.time()
-    print(f"Tiempo total: {timedelta(seconds=int(fin - inicio))}")
+
+    # inicio = time.time()
+    # with StayAwake():
+    #     # Nodos (micro-lotes)
+    #     ingest_nodes(nodes_enriched_df, 
+    #                     buckets=CFG["etl"]["buckets"]["nodes"], 
+    #                     writers_per_bucket=CFG["etl"]["writers_per_bucket"]["nodes"], 
+    #                     batch_size=CFG["etl"]["batch_size"]["nodes"])
+
+    #     # Relaciones (micro-lotes)
+    #     ingest_edges(edges_enriched, 
+    #                 buckets=CFG["etl"]["buckets"]["edges"], 
+    #                 writers_per_bucket=CFG["etl"]["writers_per_bucket"]["edges"], 
+    #                 batch_size=CFG["etl"]["batch_size"]["edges"], 
+    #                 chk_prefix="rels_srcbuck" )
+
+    # fin = time.time()
+    # print(f"Tiempo total: {timedelta(seconds=int(fin - inicio))}")
 
 if __name__ == '__main__':
     main()
