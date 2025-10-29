@@ -1,7 +1,10 @@
 import yaml, sys, platform
 from pathlib import Path
 
-with open("config/ETL_config.yaml", "r") as f:
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+conf_path = str((Path(__file__).resolve().parent / "config" / "ETL_config.yaml"))
+with open(conf_path, "r") as f:
     CFG = yaml.safe_load(f)
 
 IS_WIN          = platform.system() == "Windows"
@@ -32,6 +35,8 @@ def _in_notebook() -> bool:
         return False
 
 def resolve_checkpoint_dir(cfg) -> Path:
+    #Modo dinámico de resolver la carpeta de checkpoints en caso de usar notebook. 
+    #Se puede borrar y ajustar como LOG_DIR con paths relativos si no se utilizan notebooks. 
     opt = cfg["etl"]["checkpoints"]
     enabled = bool(opt.get("enabled", True))
     if not enabled:
@@ -60,12 +65,13 @@ def resolve_checkpoint_dir(cfg) -> Path:
     return chk
 
 CHK_DIR = resolve_checkpoint_dir(CFG)  # Path | None
-print(f"Checkpoint dir: {CHK_DIR if CHK_DIR else 'DISABLED'}")
+LOG_DIR = (REPO_ROOT / "logs").resolve()
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 __all__ = [
     "CFG","IS_WIN","SPARK_LOCAL_DIR",
     "PG_URL","PG_USER","PG_PASS","PG_SCHEMA","PG_TABLE1","PG_TABLE2","PG_TABLE3",
     "JDBC_BATCHSIZE","JDBC_FETCHSIZE",
     "NEO4J_URI","NEO4J_USER","NEO4J_PASS","NEO4J_DDBB",
-    "PYTHON","CHK_DIR"
+    "PYTHON","CHK_DIR", "LOG_DIR"
 ]

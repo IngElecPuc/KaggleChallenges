@@ -1,20 +1,24 @@
+
 from pyspark.sql import SparkSession
+from pathlib import Path
 from ETL_pg2neo4j.load_config import (
-    CFG, SPARK_LOCAL_DIR, PYTHON, PG_USER, PG_PASS, JDBC_FETCHSIZE, IS_WIN
+    CFG, SPARK_LOCAL_DIR, PYTHON, PG_USER, 
+    PG_PASS, JDBC_FETCHSIZE, IS_WIN, LOG_DIR
 )
 
 def get_spark(stats): 
 
     if CFG['spark']['use_packages']:
         # Descargar desde Maven (requiere Internet)
-        spark_kars_key = "spark.jars.packages"
-        spark_kars_value = ",".join(CFG["spark"]["maven_packages"])
+        spark_jars_key = "spark.jars.packages"
+        spark_jars_value = ",".join(CFG["spark"]["maven_packages"])
     else:
         # Usar rutas locales
-        spark_kars_key = "spark.jars"
-        spark_kars_value = CFG["spark"]["local_jars"]["windows" if IS_WIN else "linux"]
+        spark_jars_key = "spark.jars"
+        spark_jars_value = CFG["spark"]["local_jars"]["windows" if IS_WIN else "linux"]
     
-    conf_path = 'config/log4j2.properties' #Configuraciones para loggers
+    conf_path = 'config/log4j2.properties' 
+    conf_path = str((Path(__file__).resolve().parent / "config" / "log4j2.properties"))#Configuraciones para loggers
 
     usable_cores = max(1, stats['cpu_cores'] - 1) #Limitar el uso de workers a n-1
 
@@ -31,9 +35,11 @@ def get_spark(stats):
             .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
             .config("spark.driver.memory", CFG["spark"]["driver_memory"])
             .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-            .config("spark.driver.extraJavaOptions", f"-Dlog4j2.configurationFile=file:{conf_path}")
-            .config("spark.executor.extraJavaOptions", f"-Dlog4j2.configurationFile=file:{conf_path}")
-            .config(spark_kars_key, spark_kars_value)
+            .config("spark.driver.extraJavaOptions", 
+                    f"-Dlog4j2.configurationFile=file:{conf_path} -DLOG_DIR={LOG_DIR}")
+            .config("spark.executor.extraJavaOptions", 
+                    f"-Dlog4j2.configurationFile=file:{conf_path} -DLOG_DIR={LOG_DIR}")
+            .config(spark_jars_key, spark_jars_value)
             )
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")

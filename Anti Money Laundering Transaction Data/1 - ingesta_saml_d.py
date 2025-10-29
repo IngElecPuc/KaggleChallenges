@@ -1,8 +1,10 @@
 
 import os, platform, yaml, re
 from pyspark.sql import SparkSession
+from pathlib import Path
 
-with open("config/ETL_config.yaml", "r") as f:
+conf_path = str((Path(__file__).resolve().parent / "config" / "ETL_config.yaml"))
+with open(conf_path, "r") as f:
     CFG = yaml.safe_load(f)
 
 IS_WIN          = platform.system() == "Windows"

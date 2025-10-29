@@ -4,8 +4,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 import yaml, os, sys, platform
 os.environ["PYARROW_IGNORE_TIMEZONE"] = "1"
+from pathlib import Path
 
-with open("config/ETL_config.yaml", "r") as f:
+conf_path = str((Path(__file__).resolve().parent / "config" / "ETL_config.yaml"))
+with open(conf_path, "r") as f:
     CFG = yaml.safe_load(f)
 
 IS_WIN          = platform.system() == "Windows"

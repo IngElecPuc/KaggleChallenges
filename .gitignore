@@ -3,4 +3,6 @@ venv/
 titanic/scripts.ipynb
 Anti Money Laundering Transaction Data/.ipynb_checkpoints/
 Anti Money Laundering Transaction Data/checkpoints/
-Anti Money Laundering Transaction Data/data/Anti Money Laundering Transaction Data/neo4j-connector-apache-spark_2.13-5.3.11-SNAPSHOT_for_spark_3.jar
+Anti Money Laundering Transaction Data/ETL_pg2neo4j/__pycache__/
+Anti Money Laundering Transaction Data/Untitled.ipynb
+Anti Money Laundering Transaction Data/ETL_pg2neo4j/logs/
