@@ -1,7 +1,7 @@
 import yaml, sys, platform
 from pathlib import Path
 
-with open("config.yaml", "r") as f:
+with open("config/ETL_config.yaml", "r") as f:
     CFG = yaml.safe_load(f)
 
 IS_WIN          = platform.system() == "Windows"
@@ -13,6 +13,8 @@ PG_SCHEMA       = CFG["postgres"]["schema_out"]["schema_name"]
 PG_TABLE1       = CFG["postgres"]["schema_out"]["table1"]
 PG_TABLE2       = CFG["postgres"]["schema_out"]["table2"]
 PG_TABLE3       = CFG["postgres"]["schema_out"]["table3"]
+PG_SCHEMA_LOG   = CFG["postgres"]["schema_etl"]["schema_name"]
+PG_TABLE_LOG    = CFG["postgres"]["schema_etl"]["table1"]
 JDBC_BATCHSIZE  = CFG["postgres"]["batchsize"]
 JDBC_FETCHSIZE  = CFG["postgres"]["fetchsize"]
 NEO4J_URI       = CFG["neo4j"]["uri"]

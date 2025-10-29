@@ -1,9 +1,11 @@
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F, Window
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 import yaml, os, sys, platform
 os.environ["PYARROW_IGNORE_TIMEZONE"] = "1"
 
-with open("config.yaml", "r") as f:
+with open("config/ETL_config.yaml", "r") as f:
     CFG = yaml.safe_load(f)
 
 IS_WIN          = platform.system() == "Windows"
@@ -88,7 +90,10 @@ accounts = (
 transfers = df.withColumn(
     "datetime",
     F.to_timestamp(
-        F.concat_ws(" ", F.col("date"), F.date_format(F.col("time"), "HH:mm:ss")),
+        F.concat_ws(" ",
+            F.date_format(F.to_date("date", "yyyy-MM-dd"), "yyyy-MM-dd"),
+            F.date_format(F.to_timestamp("time", "HH:mm:ss"), "HH:mm:ss")
+        ),
         "yyyy-MM-dd HH:mm:ss"
     )
 )
@@ -184,16 +189,17 @@ _ = statements_full.count()  # materializa
     .mode("overwrite")
     .save())
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import URL
+pg_url = PG_URL.split(':')
+IP_DIR = pg_url[2].replace('//', '')
+port, ddbb = pg_url[-1].split('/')
 
 connection_url = URL.create(
     drivername='postgresql+psycopg2',
     username=PG_USER,
     password=PG_PASS,  
-    host='localhost',
-    port=5432,
-    database='graphs',
+    host=IP_DIR,
+    port=int(port),
+    database=ddbb,
     query={'sslmode': 'disable'},
 )
 engine = create_engine(connection_url)

@@ -2,7 +2,7 @@
 import os, platform, yaml, re
 from pyspark.sql import SparkSession
 
-with open("config.yaml", "r") as f:
+with open("config/ETL_config.yaml", "r") as f:
     CFG = yaml.safe_load(f)
 
 IS_WIN          = platform.system() == "Windows"

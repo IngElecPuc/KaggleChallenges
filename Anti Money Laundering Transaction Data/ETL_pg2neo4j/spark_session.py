@@ -14,7 +14,10 @@ def get_spark(stats):
         spark_kars_key = "spark.jars"
         spark_kars_value = CFG["spark"]["local_jars"]["windows" if IS_WIN else "linux"]
     
+    conf_path = 'config/log4j2.properties' #Configuraciones para loggers
+
     usable_cores = max(1, stats['cpu_cores'] - 1) #Limitar el uso de workers a n-1
+
     builder = (SparkSession.builder
             .appName("postgres-to-neo4j-graph")
             .master(f"local[{usable_cores}]") 
@@ -28,6 +31,8 @@ def get_spark(stats):
             .config("spark.sql.shuffle.partitions", str(CFG["spark"]["shuffle_partitions"]))
             .config("spark.driver.memory", CFG["spark"]["driver_memory"])
             .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+            .config("spark.driver.extraJavaOptions", f"-Dlog4j2.configurationFile=file:{conf_path}")
+            .config("spark.executor.extraJavaOptions", f"-Dlog4j2.configurationFile=file:{conf_path}")
             .config(spark_kars_key, spark_kars_value)
             )
     spark = builder.getOrCreate()

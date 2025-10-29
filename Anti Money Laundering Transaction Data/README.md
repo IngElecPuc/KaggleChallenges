@@ -235,3 +235,31 @@ rm -f .etl_checkpoints/nodes_hashbuck_*._DONE
 # Solo relaciones:
 rm -f .etl_checkpoints/rels_srcbuck_*._DONE
 ```
+
+# Propiedades de Nodos (:Account)
+
+| Propiedad | Tipo / Ejemplo | Fuente | Descripción | ¿Recomendado? |
+|------------|----------------|--------|--------------|----------------|
+| **account_number** | string (`"AC12345"`) | accounts.account | Identificador único de la cuenta. | ✅ Esencial (clave primaria en Neo4j). |
+| **location** | string (`"US"`, `"DE"`) | accounts.location | País/ubicación dominante de la cuenta. | ✅ Útil para segmentación geográfica. |
+| **first_seen** | timestamp (`2023-01-02 10:00:00`) | statements.date_time (mínimo) | Fecha del primer movimiento registrado. | ✅ Importante para análisis temporal. |
+| **last_seen** | timestamp (`2024-10-05 15:45:00`) | statements.date_time (máximo) | Fecha del último movimiento registrado. | ✅ Muy útil. |
+| **current_balance** | decimal(18,2) | statements.running_balance del último registro | Saldo actual estimado según los movimientos. | ✅ Central para nodos financieros. |
+| **mclose_YYYY_MM_CUR** | decimal(18,2) | statements (último del mes) | Cierre mensual por moneda. | ⚙️ Opcional — bueno si haces análisis histórico o visualización temporal. |
+| **num_tx** | int | COUNT(statements) | Cantidad total de movimientos de la cuenta. | ⚙️ Recomendado (barato de calcular, muy útil). |
+| **total_in / total_out** | decimal | SUM(delta>0) / SUM(delta<0) | Montos totales recibidos y enviados. | ⚙️ Opcional — simplifica consultas de flujo. |
+
+# Propiedades de Aristas (:TRANSFER)
+
+| Propiedad | Tipo / Ejemplo | Fuente | Descripción | ¿Recomendado? |
+|------------|----------------|--------|--------------|----------------|
+| **txn_id** | string | transfers.id | Identificador único de la transacción. | ✅ Esencial (PK de la relación). |
+| **date_time** | timestamp | transfers.date_time | Momento en que ocurrió la transacción. | ✅ Fundamental para análisis temporal. |
+| **amount** | decimal(18,2) | transfers.amount | Monto transferido (positivo absoluto). | ✅ Central. |
+| **currency** | string | derivado de payment_currency / received_currency | Moneda de la transacción. | ✅ Importante para balances multimoneda. |
+| **src_balance_before** | decimal | statements.running_balance - delta | Saldo del emisor antes del movimiento. | ⚙️ Útil si necesitas trazabilidad de saldos. |
+| **src_balance_after** | decimal | statements.running_balance | Saldo del emisor tras la transacción. | ⚙️ Igual que arriba, opcional. |
+| **dst_balance_before** | decimal | idem receptor | Saldo del receptor antes de recibir. | ⚙️ Igual. |
+| **dst_balance_after** | decimal | idem receptor | Saldo del receptor después de recibir. | ⚙️ Igual. |
+| **src_seq / dst_seq** | int | row_number() por cuenta | Orden secuencial del movimiento en cada cuenta. | ⚙️ Opcional — útil si consultas trayectorias temporales. |
+| **masked** | boolean | Bernoulli(0.2) aleatorio | Marcador de anonimización o muestreo. | ❌ Probablemente experimental; puedes omitirlo. |

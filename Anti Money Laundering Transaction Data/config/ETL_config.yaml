@@ -32,6 +32,9 @@ postgres:
     table1: 'accounts'
     table2: 'transferences'
     table3: 'statements'
+  schema_etl:
+    schema_name: 'etl'
+    table1: 'logs'
   batchsize: 10000
   fetchsize: 10000
 
