@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, sys, json, glob, logging, platform
+import json, glob, logging, platform
 from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
 from sqlalchemy import create_engine, text

@@ -122,51 +122,80 @@ Se usan `--packages` para cargar controladores JDBC y Neo4j.
   --packages org.postgresql:postgresql:42.7.4,org.neo4j:neo4j-connector-apache-spark_2.13:5.3.10_for_spark_3 \
   "3 - ETL2Neo4j.py"
 
+# O bien, si son necesarias algunas configuraciones extra... (cambiar separador "," por ":" según si se utiliza Windows o Ubuntu)
+
+# (3.1) Con los jars en las carpetas correspondientes (chequear ETL_config.yaml) -> use_packages: false y las líneas de los jars comentadas
 /opt/spark/bin/spark-submit \
-  --packages org.postgresql:postgresql:42.7.4 \
-  --conf spark.executor.memory=5g \
-  --conf spark.driver.memory=5g \
-  --conf spark.memory.fraction=0.7 \
+  --conf spark.driver.memory=8g \
+  --conf spark.executor.memory=6g \
+  --conf spark.memory.fraction=0.6 \  
   --conf spark.memory.storageFraction=0.3 \
-  --conf spark.sql.shuffle.partitions=64 \
+  --conf spark.sql.shuffle.partitions=32 \
+  --conf spark.sql.adaptive.enabled=true \  
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
   --conf spark.task.maxFailures=1 \
   --conf spark.stage.maxConsecutiveAttempts=1 \
   --conf spark.speculation=false \
+  --conf spark.ui.showConsoleProgress=false \
+  --conf "spark.driver.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
+  --conf "spark.executor.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
+  --conf spark.driver.extraClassPath=/opt/spark/jars/postgresql-42.7.4.jar:/opt/spark/jars/neo4j-connector-apache-spark_2.12-5.3.10_for_spark_3.jar \
+  --conf spark.executor.extraClassPath=/opt/spark/jars/postgresql-42.7.4.jar:/opt/spark/jars/neo4j-connector-apache-spark_2.12-5.3.10_for_spark_3.jar \
   "3 - ETL2Neo4j.py"
 
-/opt/spark-3.5.6/bin/spark-submit \
-  --packages org.postgresql:postgresql:42.7.4,org.neo4j:neo4j-connector-apache-spark_2.13:5.3.x_for_spark_4 \
-  --conf spark.executor.memory=5g \
-  --conf spark.driver.memory=5g \
-  --conf spark.memory.fraction=0.7 \
-  --conf spark.memory.storageFraction=0.3 \
-  --conf spark.sql.shuffle.partitions=64 \
-  --conf spark.task.maxFailures=1 \
-  --conf spark.stage.maxConsecutiveAttempts=1 \
-  --conf spark.speculation=false \
-
+# (3.2) Utilizando los packages: ETL_config.yaml -> use_packages: true
 /opt/spark/bin/spark-submit \
-  --packages org.postgresql:postgresql:42.7.4,org.neo4j:neo4j-connector-apache-spark_2.13:5.3.10_for_spark_3 \
-  --conf spark.executor.memory=5g \
-  --conf spark.driver.memory=5g \
-  --conf spark.memory.fraction=0.7 \
+  --packages org.postgresql:postgresql:42.7.4,org.neo4j:neo4j-connector-apache-spark_2.13:5.3.3_for_spark_4 \
+  --conf spark.driver.memory=8g \
+  --conf spark.executor.memory=6g \
+  --conf spark.memory.fraction=0.6 \
   --conf spark.memory.storageFraction=0.3 \
-  --conf spark.sql.shuffle.partitions=64 \
+  --conf spark.sql.shuffle.partitions=32 \
+  --conf spark.sql.adaptive.enabled=true \
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
   --conf spark.task.maxFailures=1 \
   --conf spark.stage.maxConsecutiveAttempts=1 \
   --conf spark.speculation=false \
+  --conf spark.ui.showConsoleProgress=false \
+  --conf "spark.driver.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
+  --conf "spark.executor.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
   "3 - ETL2Neo4j.py"
 
+# (3.3) Declarando directamente el uso de los jars: ETL_config.yaml -> use_packages: false, y las líneas no comentadas
 /opt/spark/bin/spark-submit \
-  --packages org.postgresql:postgresql:42.7.4,org.neo4j:neo4j-connector-apache-spark_2.13:5.3.x_for_spark_4 \
-  --conf spark.executor.memory=5g \
-  --conf spark.driver.memory=5g \
-  --conf spark.memory.fraction=0.7 \
+  --jars /opt/spark/jars/postgresql-42.7.4.jar,/opt/spark/jars/neo4j-connector-apache-spark_2.13-5.3.3_for_spark_4.jar \
+  --conf spark.driver.memory=8g \
+  --conf spark.executor.memory=6g \
+  --conf spark.memory.fraction=0.6 \
   --conf spark.memory.storageFraction=0.3 \
-  --conf spark.sql.shuffle.partitions=64 \
+  --conf spark.sql.shuffle.partitions=32 \
+  --conf spark.sql.adaptive.enabled=true \
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
   --conf spark.task.maxFailures=1 \
   --conf spark.stage.maxConsecutiveAttempts=1 \
   --conf spark.speculation=false \
+  --conf spark.ui.showConsoleProgress=false \
+  --conf "spark.driver.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
+  --conf "spark.executor.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
+  "3 - ETL2Neo4j.py"
+
+#(3.4) Declarando indirectamente el uso de los jars: ETL_config.yaml -> use_packages: false, y las líneas no comentadas
+/opt/spark/bin/spark-submit \  
+  --conf spark.driver.extraClassPath=/opt/spark/jars/postgresql-42.7.4.jar:/opt/spark/jars/neo4j-connector-apache-spark_2.12-5.3.10_for_spark_3.jar \
+  --conf spark.executor.extraClassPath=/opt/spark/jars/postgresql-42.7.4.jar:/opt/spark/jars/neo4j-connector-apache-spark_2.12-5.3.10_for_spark_3.jar \  
+  --conf spark.driver.memory=8g \  
+  --conf spark.executor.memory=6g \
+  --conf spark.memory.fraction=0.6 \  
+  --conf spark.memory.storageFraction=0.3 \
+  --conf spark.sql.shuffle.partitions=32 \  
+  --conf spark.sql.adaptive.enabled=true \  
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+  --conf spark.task.maxFailures=1 \  
+  --conf spark.stage.maxConsecutiveAttempts=1 \
+  --conf spark.speculation=false \
+  --conf spark.ui.showConsoleProgress=false \
+  --conf "spark.driver.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \
+  --conf "spark.executor.extraJavaOptions=-Dlog4j2.configurationFile=config/log4j2.properties" \   
   "3 - ETL2Neo4j.py"
 
 ```
@@ -193,20 +222,31 @@ sudo pkill -f postgres || true
 
 ---
 
-## 6) Notas finales
+## 6) 🧾 Notas finales
 
-- Editar rutas en `config.yaml` si cambias de equipo o disco.  
-- `config.yaml` ya reduce particiones (`spark.shuffle.partitions`) y usa `MEMORY_AND_DISK` para evitar errores de memoria.  
-- La interfaz web de Neo4j (`http://localhost:7474/browser`) no afecta la conexión Spark → Neo4j (que usa exclusivamente `bolt://localhost:7687`).  
-- Para revisar el dataset, licencias o esquema original → visita Kaggle.
+### 🔧 Configuración
+- Edita rutas en `config.yaml` si cambias de equipo o disco.  
+- El archivo `config.yaml` ya optimiza `spark.shuffle.partitions` y usa `MEMORY_AND_DISK` para evitar desbordes de memoria.  
+
+### 💡 Compatibilidad
+- Neo4j usa **Java 21**; Spark 4.0.1 usa **Java 17** → asegúrate de que ambos estén correctamente configurados en tu entorno (puede requerir `update-alternatives` o exportar `JAVA_HOME` apropiado).  
+- La interfaz web de Neo4j (`http://localhost:7474/browser`) no afecta la conexión `bolt://localhost:7687`.
+
+### 📦 Dependencias
+- Verifica que los JARs declarados en `ETL_config.yaml` correspondan a **Spark 4 / Scala 2.13** (Windows) o a **Spark 3 / Scala 2.12** (Ubuntu):
+  - `org.postgresql:postgresql:42.7.4`
+  - `org.neo4j:neo4j-connector-apache-spark_2.13:5.3.x_for_spark_4` # O
+  - `org.neo4j:neo4j-connector-apache-spark_2.13:5.3.x_for_spark_3`
 
 ---
 
 ## 7) ⚠️ Checkpoints del ETL (control de reintentos por bucket)
 
-El script **`3 - ETL2Neo4j.py`** implementa un sistema de checkpoints propio (no usa Spark Streaming), que permite evitar reprocesar buckets ya exportados a Neo4j.  
-Cuando los checkpoints están activados, cada bucket procesado crea un archivo `. _DONE` en un directorio llamado `.etl_checkpoints`.  
-Si el script se ejecuta nuevamente y encuentra estos archivos, mostrará mensajes como:
+El script **`3 - ETL2Neo4j.py`** implementa un sistema de checkpoints que permite **reanudar cargas interrumpidas sin duplicar datos**.  
+Cada bucket procesado genera un archivo `._DONE` dentro del directorio `.etl_checkpoints/`.
+
+Al reejecutar el pipeline, los buckets marcados se omiten automáticamente, mostrando mensajes como:
+
 
 ```bash
 [NODOS] Skip bucket 0 (...)
@@ -220,6 +260,7 @@ y no volverá a cargar esos datos.
 
 Por defecto (configuración `etl.checkpoints.mode: auto` en `config.yaml`), los archivos se guardan en:
 
+> 💡 **Sugerencia:** mantener los checkpoints activados en entornos productivos y desactivarlos solo durante pruebas o depuración.
 
 ---
 
@@ -236,7 +277,7 @@ rm -f .etl_checkpoints/nodes_hashbuck_*._DONE
 rm -f .etl_checkpoints/rels_srcbuck_*._DONE
 ```
 
-# Propiedades de Nodos (:Account)
+### 🧩 Propiedades de los Nodos (`:Account`)
 
 | Propiedad | Tipo / Ejemplo | Fuente | Descripción | ¿Recomendado? |
 |------------|----------------|--------|--------------|----------------|
@@ -249,7 +290,7 @@ rm -f .etl_checkpoints/rels_srcbuck_*._DONE
 | **num_tx** | int | COUNT(statements) | Cantidad total de movimientos de la cuenta. | ⚙️ Recomendado (barato de calcular, muy útil). |
 | **total_in / total_out** | decimal | SUM(delta>0) / SUM(delta<0) | Montos totales recibidos y enviados. | ⚙️ Opcional — simplifica consultas de flujo. |
 
-# Propiedades de Aristas (:TRANSFER)
+### 🔗 Propiedades de las Aristas (`:TX`)
 
 | Propiedad | Tipo / Ejemplo | Fuente | Descripción | ¿Recomendado? |
 |------------|----------------|--------|--------------|----------------|
@@ -263,3 +304,57 @@ rm -f .etl_checkpoints/rels_srcbuck_*._DONE
 | **dst_balance_after** | decimal | idem receptor | Saldo del receptor después de recibir. | ⚙️ Igual. |
 | **src_seq / dst_seq** | int | row_number() por cuenta | Orden secuencial del movimiento en cada cuenta. | ⚙️ Opcional — útil si consultas trayectorias temporales. |
 | **masked** | boolean | Bernoulli(0.2) aleatorio | Marcador de anonimización o muestreo. | ❌ Probablemente experimental; puedes omitirlo. |
+
+1 - ingesta_saml_d.py
+
+Ingresa los datos del CSV original del dataset Kaggle a PostgreSQL.
+
+Usa Spark con JDBC, crea una tabla “raw” y normaliza columnas.
+
+2️⃣ 2 - internalETL.py
+
+Lee la tabla “raw” y genera tres tablas limpias y derivadas:
+
+accounts
+
+transferences
+
+statements
+
+Añade llaves primarias y relaciones consistentes.
+
+Escribe los resultados de nuevo a PostgreSQL (en schema saml_d).
+
+3️⃣ 3 - ETL2Neo4j.py
+
+Fase final del pipeline: Postgres → Neo4j.
+
+Crea sesión Spark con configuraciones del módulo spark_session.
+
+Usa módulos del paquete ETL_pg2neo4j para:
+
+Leer datos de Postgres (io_pg.py)
+
+Transformar a nodos/aristas (transform.py)
+
+Ingestar en Neo4j (io_neo4j.py)
+
+Registrar logs y checkpoints (logs.py, utils.py)
+
+Controlar paralelismo y recursos (diagnostics.py)
+
+Es un orquestador: ejecuta todo el flujo end-to-end.
+
+## 🧠 Estructura modular del paquete `ETL_pg2neo4j`
+
+| 🧩 Módulo | 📝 Función principal |
+|-----------|----------------------|
+| `load_config.py` | 🔧 Configuración y resolución de rutas. |
+| `spark_session.py` | 🚀 Inicialización de Spark con jars/paquetes. |
+| `io_pg.py` | 💾 Lectura particionada desde Postgres. |
+| `transform.py` | 🔄 Construcción de nodos y relaciones enriquecidas. |
+| `io_neo4j.py` | 🕸️ Ingesta a Neo4j con batching y checkpoints. |
+| `diagnostics.py` | 🧠 Ajustes de rendimiento y planificación. |
+| `logs.py` | 📜 Gestión estructurada de logs (Spark/Python). |
+| `utils.py` | 🧰 Utilidades varias (checkpoints, ETA, StayAwake). |
+

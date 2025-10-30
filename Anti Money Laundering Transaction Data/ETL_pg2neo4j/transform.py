@@ -188,9 +188,9 @@ def build_nodes_edges(accounts_df, tx_df, stm_df):
     all_keys = (monthly_pivot.select("prop_name").distinct().collect())
     keys = [r["prop_name"] for r in all_keys]
 
-    # 2) Añadimos una columna por clave
+    # 2) Añadimos una columna por clave (sin warnings)
     for k in keys:
-        nodes_enriched_df = nodes_enriched_df.withColumn(k, nodes_enriched_df["mclose_map"].getItem(F.lit(k)))
+        nodes_enriched_df = nodes_enriched_df.withColumn(k, F.col("mclose_map")[k])
 
     # 3) Limpiamos el mapa
     nodes_enriched_df = nodes_enriched_df.drop("mclose_map")

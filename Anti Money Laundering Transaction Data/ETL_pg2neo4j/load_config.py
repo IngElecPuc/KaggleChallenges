@@ -2,8 +2,8 @@ import yaml, sys, platform
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+conf_path = str((REPO_ROOT / "config" / "ETL_config.yaml").resolve())
 
-conf_path = str((Path(__file__).resolve().parent / "config" / "ETL_config.yaml"))
 with open(conf_path, "r") as f:
     CFG = yaml.safe_load(f)
 

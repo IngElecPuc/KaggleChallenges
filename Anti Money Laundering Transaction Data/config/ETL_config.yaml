@@ -1,16 +1,19 @@
 spark:
   app_name: "ieee-fraud-jupyter"
-  # alternativa 1: usar --packages y no poner jars acá
-  jars: "/opt/spark/jars/postgresql-42.7.4.jar,/opt/spark/jars/neo4j-connector-apache-spark_2.13-5.3.x_for_spark_4.jar"
   shuffle_partitions: 64
   driver_memory: "8g"
   use_packages: false
+  calculate_plan: false
   maven_packages:
     - "org.postgresql:postgresql:42.7.4"
     - "org.neo4j:neo4j-connector-apache-spark_2.13:5.3.3_for_spark_4"
-  local_jars:
-    linux: "/opt/jars/postgresql-42.7.4.jar,/opt/jars/neo4j-connector-apache-spark_2.13-5.3.3_for_spark_4.jar"
-    windows: "C:\\jars\\postgresql-42.7.4.jar;C:\\jars\\neo4j-connector-apache-spark_2.13-5.3.3_for_spark_4.jar"
+  local_jars: 
+    linux: 
+      - "/opt/spark/jars/postgresql-42.7.4.jar"
+      - "/opt/spark/jars/neo4j-connector-apache-spark_2.12-5.3.10_for_spark_3.jar"
+    windows: 
+      - "C:\\jars\\postgresql-42.7.4.jar"
+      - "C:\\jars\\neo4j-connector-apache-spark_2.13-5.3.3_for_spark_4.jar"
   local_dirs:
     linux: "/tmp/spark"
     windows: "C:\\spark\\tmp"
@@ -64,3 +67,6 @@ etl:
   batch_size:
       nodes: 20000
       edges: 20000
+
+logging:
+  capture_stdout: false

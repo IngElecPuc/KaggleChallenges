@@ -14,6 +14,7 @@ Cada carpeta incluye:
 |------------------|------------------------------------------------|------|
 | Titanic          | Predicción de supervivencia en el Titanic      | [Ver carpeta](./titanic) |
 | House Prices     | Predicción del valor de casas                  | [Ver carpeta](./house-prices) |
+| AML              | Transformación en modelo de grafos (ETL)       | [Ver carpeta](./Anti Money Laundering Transaction Data) |
 | ...              | Más proyectos en camino                        |      |
 
 ---

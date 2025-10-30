@@ -1,6 +1,48 @@
-from pyspark.sql import functions as F
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F, types as T
 import os, shutil, math, multiprocessing, psutil
 from contextlib import contextmanager
+import psutil
+
+FIXED_SIZES = {
+    T.BooleanType: 1, T.ByteType: 1, T.ShortType: 2, T.IntegerType: 4,
+    T.LongType: 8, T.FloatType: 4, T.DoubleType: 8,
+    T.DateType: 4, T.TimestampType: 12,  # aprox
+    T.BinaryType: 1,  # por byte; usamos avg length
+}
+
+def avg_strlen(df, col):
+    return df.select(F.avg(F.length(F.col(col)).cast("double"))).first()[0] or 0.0
+
+def approx_bytes_per_row_uncompressed(df, sample_rows=500_000):
+    # muestreamos para las medias de strings y para evitar full scan
+    sdf = df.limit(sample_rows)
+    total = 0.0
+    for f in df.schema.fields:
+        dt = type(f.dataType)
+        if isinstance(f.dataType, T.StringType):
+            total += avg_strlen(sdf, f.name)
+        elif isinstance(f.dataType, T.BinaryType):
+            total += avg_strlen(sdf, f.name)  # bytes
+        else:
+            total += FIXED_SIZES.get(dt, 8)  # fallback
+    # overhead por fila (objeto/serde) muy grosero:
+    total += 16
+    return total  # bytes por fila aprox
+
+def estimate_for_ingest(df, target_bucket_mb=128, sample_rows=500_000):
+    rows = df.count()
+    bpr  = approx_bytes_per_row_uncompressed(df, sample_rows)
+    total_bytes = bpr * rows
+    target_bytes = target_bucket_mb * 1024 * 1024
+    buckets = max(1, math.ceil(total_bytes / target_bytes))
+    return {
+        "rows": rows,
+        "bytes_per_row_uncompressed": bpr,
+        "total_gb": total_bytes / (1024**3),
+        "target_bucket_mb": target_bucket_mb,
+        "recommended_buckets": buckets,
+    }
 
 # Intentamos psutil para medir memoria; si no está, usamos /proc/meminfo
 def _meminfo_fallback():
@@ -39,14 +81,14 @@ def human_bytes(n):
 
 def print_diagnostics(logger, prefix="[DIAG] "):
     stats = get_machine_stats()
-    print(prefix + f"Cores totales          : {stats['cpu_cores']}")
-    print(prefix + f"RAM total              : {human_bytes(stats['mem_total_bytes'])}")
-    print(prefix + f"RAM usada              : {human_bytes(stats['mem_used_bytes'])}")
-    print(prefix + f"RAM disponible         : {human_bytes(stats['mem_available_bytes'])}")
     logger.info(prefix + f"Cores totales          : {stats['cpu_cores']}")
     logger.info(prefix + f"RAM total              : {human_bytes(stats['mem_total_bytes'])}")
     logger.info(prefix + f"RAM usada              : {human_bytes(stats['mem_used_bytes'])}")
     logger.info(prefix + f"RAM disponible         : {human_bytes(stats['mem_available_bytes'])}")
+    print(prefix + f"Cores totales          : {stats['cpu_cores']}")
+    print(prefix + f"RAM total              : {human_bytes(stats['mem_total_bytes'])}")
+    print(prefix + f"RAM usada              : {human_bytes(stats['mem_used_bytes'])}")
+    print(prefix + f"RAM disponible         : {human_bytes(stats['mem_available_bytes'])}")
     return stats
 
 def apply_spark_tuning(
@@ -210,3 +252,80 @@ def recommend_writers_for_neo4j(spark_params, max_writers_per_bucket=2):
     if eff <= 2:
         return 1
     return min(max_writers_per_bucket, max(1, eff // 2))
+
+# si approx_bytes_per_row_uncompressed / estimate_for_ingest ya las tienes, reutilízalas:
+# from ETL_pg2neo4j.diagnostics import estimate_for_ingest
+
+def _decide_target_bucket_mb(free_gb: float, eff: int, kind: str) -> int:
+    """
+    Calcula un tamaño de bucket conservador a partir de la RAM libre (GB) y la concurrencia efectiva (eff).
+    La idea: reservar ~2 GB para el driver y repartir el resto entre writers concurrentes,
+    usando un factor de seguridad (0.5) y límites [64, 256] MB por bucket.
+    """
+    reserve_gb = 2.0
+    usable_gb = max(0.5, free_gb - reserve_gb)
+    writers = max(1, eff)
+    per_writer_gb = (usable_gb / writers) * 0.5  # 50% de seguridad
+
+    # relaciones suelen ser más pesadas -> un poco más alto
+    base_mb = 128 if kind == "edges" else 96
+
+    target_mb = int(max(64, min(256, per_writer_gb * 1024)))
+    # mezcla con el base
+    return int(max(64, min(256, (target_mb + base_mb) / 2)))
+
+def get_effective_parallelism_from_spark(spark, leave_one_core=True):
+    """
+    Calcula la concurrencia efectiva a partir de la SparkSession existente,
+    sin crear una nueva. Usa defaultParallelism y spark.task.cpus.
+    """
+    sc = spark.sparkContext
+    total = max(1, sc.defaultParallelism)  # ~ núm. cores del cluster local
+    if leave_one_core and total > 1:
+        total -= 1
+    task_cpus = int(spark.conf.get("spark.task.cpus", "1"))
+    eff = max(1, total // max(1, task_cpus))
+    return {
+        "cpu_total_guess": sc.defaultParallelism,
+        "usable_cores": total,
+        "task_cpus": task_cpus,
+        "effective_parallelism": eff,
+    }
+
+def ingestion_plan(spark, logger, df: DataFrame, *, kind: str, status: dict, BS: int = 10_000):
+    """
+    Devuelve (B, W, BS) sin crear otra SparkSession.
+    """
+    sparams = get_effective_parallelism_from_spark(spark, leave_one_core=True)
+    eff = int(sparams["effective_parallelism"])
+
+    # writers por bucket “sanos”
+    W_default = 1 if eff <= 2 else 2
+
+    # 2) tamaño de bucket objetivo según memoria libre
+    free_bytes = status.get("mem_available_bytes") or int(status.get("mem_free_gb", 4) * 1024**3)
+    free_gb = free_bytes / (1024**3)
+    target_bucket_mb = _decide_target_bucket_mb(free_gb, eff, kind)
+
+    # 3) estima dataset y buckets recomendados
+    plan = estimate_for_ingest(df, target_bucket_mb=target_bucket_mb)
+    B = max(2, int(plan["recommended_buckets"]))
+
+    # 4) writers por bucket (no pasarse del paralelismo real)
+    W = max(1, min(W_default, eff // max(1, B)))
+
+    logger.info(
+        f"[PLAN {kind}] rows={plan['rows']:,} "
+        f"bpr≈{plan['bytes_per_row_uncompressed']:.1f}B "
+        f"total≈{plan['total_gb']:.2f}GB "
+        f"target_bucket≈{target_bucket_mb}MB -> buckets={B} writers/bucket={W} batch.size={BS} "
+        f"(eff={eff}, task.cpus={sparams['task_cpus']}, usable_cores={sparams['usable_cores']})"
+    )
+    print(
+        f"[PLAN {kind}] rows={plan['rows']:,} "
+        f"bpr≈{plan['bytes_per_row_uncompressed']:.1f}B "
+        f"total≈{plan['total_gb']:.2f}GB "
+        f"target_bucket≈{target_bucket_mb}MB -> buckets={B} writers/bucket={W} batch.size={BS} "
+        f"(eff={eff}, task.cpus={sparams['task_cpus']}, usable_cores={sparams['usable_cores']})"
+    )
+    return B, W, BS
