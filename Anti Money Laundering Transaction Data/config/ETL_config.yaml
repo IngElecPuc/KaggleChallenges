@@ -7,6 +7,7 @@ spark:
   maven_packages:
     - "org.postgresql:postgresql:42.7.4"
     - "org.neo4j:neo4j-connector-apache-spark_2.13:5.3.3_for_spark_4"
+    #- "org.neo4j:neo4j-connector-apache-spark_2.12:5.3.10_for_spark_3"
   local_jars: 
     linux: 
       - "/opt/spark/jars/postgresql-42.7.4.jar"

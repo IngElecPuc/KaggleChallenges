@@ -26,8 +26,6 @@ def prepare_dataset_neo4j():
 
     print('Preparing Graph Database')
 
-    graph.run(f'STOP DATABASE `{NEO4J_DDBB}`;')
-
     graph.run(f'DROP DATABASE `{NEO4J_DDBB}` IF EXISTS;')
 
     graph.run(f'CREATE DATABASE `{NEO4J_DDBB}` IF NOT EXISTS;')
