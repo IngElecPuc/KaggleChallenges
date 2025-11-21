@@ -1,0 +1,11 @@
+pandas
+jupyterlab
+matplotlib
+seaborn
+scikit-learn
+scipy
+pyspark==3.5.3
+SQLAlchemy
+py2neo
+darts
+statsmodels
